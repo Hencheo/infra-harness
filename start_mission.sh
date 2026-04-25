@@ -20,7 +20,7 @@ mission = {
     'data': '$MISSION_DATA',
     'execution_id': '$EXEC_ID'
 }
-r.publish('harness.audit.worker', json.dumps(mission))
+r.publish('harness.audit.leader', json.dumps(mission))
 "
 
 echo -e "${GREEN}🎯 Sinal enviado (ID: $EXEC_ID)! Acompanhe o fluxo no Cockpit.${NC}"

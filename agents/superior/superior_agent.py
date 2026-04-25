@@ -7,6 +7,7 @@ from agno.agent import Agent
 from agno.models.openai import OpenAIChat
 from core.feature_tracker import feature_tracker
 from core.protocols import build_context_reset
+from core.observability import tracer, EventType
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -106,6 +107,14 @@ class SuperiorAgent(BaseLeader):
             except Exception as e:
                 print(f"[{self.agent_id}] ⚠️ FeatureTracker: {e}")
             
+            # ── TRACE: Fase concluída com duração ──
+            phase_duration = tracer.stop_phase_timer(current_phase["id"])
+            tracer.emit(EventType.PHASE_COMPLETED, self.agent_id, {
+                "phase_id": current_phase["id"],
+                "phase_name": current_phase["name"],
+                "duration_s": phase_duration,
+            }, execution_id=self._current_exec_id)
+            
             # ── CONTEXT ISOLATION: Sinaliza reset de contexto para a fase concluída ──
             # Agentes da fase completada devem limpar seu histórico para a próxima tarefa.
             reset_msg = build_context_reset(
@@ -133,6 +142,13 @@ class SuperiorAgent(BaseLeader):
         Despacha uma fase específica para o líder correto via delegate_task.
         Usa dados CONCRETOS da Spec ao invés de parâmetros vazios.
         """
+        # ── TRACE: Fase iniciada + cronômetro ──
+        tracer.start_phase_timer(phase["id"])
+        tracer.emit(EventType.PHASE_STARTED, self.agent_id, {
+            "phase_id": phase["id"],
+            "phase_name": phase["name"],
+            "leader": phase["leader"],
+        }, execution_id=self._current_exec_id)
         leader = phase["leader"]
         phase_id = phase["id"]
         objective = phase["objective"]

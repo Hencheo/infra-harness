@@ -7,6 +7,7 @@ from core.event_bus import EventBus
 from core.store import StateStore
 from core.verifier import verifier
 from core.feature_tracker import feature_tracker
+from core.observability import tracer, EventType
 import threading
 
 class WorkflowEngine:
@@ -65,6 +66,13 @@ class WorkflowEngine:
         
         # Salva o estado inicial na Store
         self.store.set_state("engine", execution_id, "workflow_context", execution_state)
+        
+        # ── TRACE: Workflow iniciado ──
+        tracer.emit(EventType.WORKFLOW_STARTED, "engine", {
+            "workflow": workflow_def['name'],
+            "steps_count": len(workflow_def['steps']),
+            "max_retries": max_retries,
+        }, execution_id=execution_id)
         
         # Dispara o primeiro passo
         self._dispatch_step(execution_id, execution_state)
@@ -142,11 +150,29 @@ class WorkflowEngine:
                     "message": state['halt_reason'],
                     "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
                 })
+                
+                # ── TRACE: Circuit Breaker ativado ──
+                tracer.emit(EventType.CIRCUIT_BREAKER, "engine", {
+                    "step_id": step_id,
+                    "retries": current_retries,
+                    "max_retries": max_retries,
+                    "halt_reason": state['halt_reason'],
+                }, execution_id=exec_id)
+                
                 return
 
             # Dentro do limite: retry com cooldown
             print(f"[Ralph Loop] Meta não atingida em {step_id}. "
                   f"Retry {current_retries}/{max_retries} após {cooldown}s de cooldown...")
+            
+            # ── TRACE: Retry ──
+            tracer.emit(EventType.RETRY, "engine", {
+                "step_id": step_id,
+                "attempt": current_retries,
+                "max_retries": max_retries,
+                "cooldown_s": cooldown,
+            }, execution_id=exec_id)
+            
             time.sleep(cooldown)
             self._dispatch_step(exec_id, state)
             return
@@ -179,6 +205,12 @@ class WorkflowEngine:
                 state['status'] = "COMPLETED"
                 self.store.set_state("engine", exec_id, "workflow_context", state)
                 print(f"[Engine] Workflow {state['name']} CONCLUÍDO com sucesso!")
+                
+                # ── TRACE: Workflow concluído ──
+                tracer.emit(EventType.WORKFLOW_COMPLETED, "engine", {
+                    "workflow": state['name'],
+                    "total_steps": len(state['steps']),
+                }, execution_id=exec_id)
 
     def _dispatch_step(self, execution_id: str, state: Dict):
         """

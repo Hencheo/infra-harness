@@ -14,6 +14,7 @@ from core.mcp_server import mcp_server
 from core.event_bus import EventBus
 from core.store import StateStore
 from core.protocols import validate_result, build_result
+from core.observability import tracer, EventType
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -175,6 +176,11 @@ class BaseWorker:
                 if "429" in err_msg or "rate limit" in err_msg:
                     print(f"[{self.agent_id}] ⚠️ Rate Limit detectado (Tentativa {attempt+1}). Dormindo {delay}s...")
                     self.store.set_state(self.agent_id, "global", "status", f"🚨 RATE LIMIT: Aguardando {delay}s...")
+                    # ── TRACE: Rate Limit ──
+                    tracer.emit(EventType.RATE_LIMIT, self.agent_id, {
+                        "attempt": attempt + 1,
+                        "delay_s": delay,
+                    })
                     time.sleep(delay)
                     continue
                 raise e
@@ -237,6 +243,12 @@ class BaseWorker:
         
         # Reporta que começou a trabalhar (para visibilidade no Cockpit)
         self.store.set_state(self.agent_id, exec_id or "global", "status", f"OCUPADO: {action}")
+        
+        # ── TRACE: Task iniciada ──
+        task_trace_id = tracer.emit(EventType.TASK_STARTED, self.agent_id, {
+            "action": action,
+            "params_keys": list(params.keys()) if isinstance(params, dict) else [],
+        }, execution_id=exec_id)
 
         # --- EXECUÇÃO REAL VIA LLM (SAFE) ---
         # Constrói o contexto da tarefa para a IA
@@ -254,6 +266,14 @@ class BaseWorker:
             resultado_final = f"Erro na execução: {str(e)}"
             status_final = "failed"
         # -----------------------------
+        
+        # ── TRACE: Task concluída ou falhada ──
+        trace_type = EventType.TASK_COMPLETED if status_final == "success" else EventType.TASK_FAILED
+        tracer.emit(trace_type, self.agent_id, {
+            "action": action,
+            "status": status_final,
+            "output_preview": str(resultado_final)[:100] if resultado_final else "",
+        }, parent_id=task_trace_id, execution_id=exec_id)
         
          # Reporta resultado real
         self.report_result(exec_id, task_payload.get("step_id") or action, status_final, {"output": resultado_final})
