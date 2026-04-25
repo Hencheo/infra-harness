@@ -1,4 +1,5 @@
 import os
+import time
 import yaml
 from typing import Dict, Any
 from agents.leaders.base_leader import BaseLeader
@@ -103,6 +104,17 @@ class SuperiorAgent(BaseLeader):
                 feature_tracker.complete_phase(current_phase["id"])
             except Exception as e:
                 print(f"[{self.agent_id}] ⚠️ FeatureTracker: {e}")
+            
+            # ── CONTEXT ISOLATION: Sinaliza reset de contexto para a fase concluída ──
+            # Agentes da fase completada devem limpar seu histórico para a próxima tarefa.
+            self.bus.publish("harness.context.reset", {
+                "completed_phase": current_phase["id"],
+                "completed_leader": current_phase.get("leader"),
+                "reason": f"Fase '{current_phase['name']}' concluída. Limpeza de contexto.",
+                "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            })
+            print(f"[{self.agent_id}] 🔄 CONTEXT RESET broadcast para fase: {current_phase['id']}")
+            # ── FIM CONTEXT ISOLATION ──
 
         self._current_phase_index += 1
         phase = self._get_current_phase()

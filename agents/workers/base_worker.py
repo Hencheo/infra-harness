@@ -1,5 +1,7 @@
 import os
 import time
+import uuid
+import json
 import logging
 
 # Silencia logs verbosos de bibliotecas externas
@@ -62,11 +64,73 @@ class BaseWorker:
                 "Mantenha a segurança e integridade do projeto."
             ],
             tools=tools,
-            markdown=True
+            markdown=True,
+            # ── CONTEXT ISOLATION: Cada run é isolada, sem histórico contaminante ──
+            add_history_to_context=False,
+            num_history_runs=0,
         )
+        
+        # Contador de tarefas processadas nesta sessão (para diagnóstico)
+        self._tasks_processed = 0
+        self._current_session_tag = str(uuid.uuid4())[:8]
         
         # Check-in Inicial: Aparecer no Cockpit imediatamente
         self.store.set_state(self.agent_id, "global", "status", "ONLINE (Aguardando missão)")
+
+    # ── CONTEXT ISOLATION (Spawning Limpo) ───────────────────────────
+    
+    def _reset_context(self, completed_action: str = "", summary: str = ""):
+        """
+        Reseta o contexto do agente para a próxima tarefa.
+        
+        Gera um novo session_id no Agno Agent, garantindo que a próxima
+        chamada a self.ai.run() comece com uma janela de contexto 100% limpa.
+        
+        Baseado na estratégia Anthropic V2: ao finalizar uma feature,
+        o agente atual é "morto" e um novo nasce com contexto limpo.
+        
+        Ref: Análise de Lacunas, Seção 5.3 — "Limpeza de Contexto por Feature"
+        """
+        old_session = self._current_session_tag
+        
+        # Arquiva o contexto da sessão que está terminando
+        self._archive_context(old_session, completed_action, summary)
+        
+        # Gera uma nova sessão limpa
+        self._current_session_tag = str(uuid.uuid4())[:8]
+        self.ai.session_id = f"{self.agent_id}-{self._current_session_tag}"
+        self._tasks_processed += 1
+        
+        print(f"[{self.agent_id}] 🔄 CONTEXT RESET: Sessão {old_session} → {self._current_session_tag} "
+              f"(Tasks processadas: {self._tasks_processed})")
+    
+    def _archive_context(self, session_tag: str, action: str, summary: str):
+        """
+        Arquiva um resumo da sessão completada em cold storage (arquivo de log).
+        Isso preserva a "memória episódica" sem poluir o contexto ativo.
+        
+        Ref: Análise de Lacunas, Seção 4.1 — "Separação de Contexto Ativo e Experiência"
+        """
+        archive_dir = "logs/context_archive"
+        os.makedirs(archive_dir, exist_ok=True)
+        
+        archive_entry = {
+            "agent_id": self.agent_id,
+            "session_tag": session_tag,
+            "action": action,
+            "summary": summary[:500] if summary else "(sem resumo)",
+            "tasks_processed": self._tasks_processed,
+            "archived_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        }
+        
+        archive_path = os.path.join(archive_dir, f"{self.agent_id}_history.jsonl")
+        try:
+            with open(archive_path, 'a', encoding='utf-8') as f:
+                f.write(json.dumps(archive_entry, ensure_ascii=False) + "\n")
+        except Exception as e:
+            print(f"[{self.agent_id}] ⚠️ Falha ao arquivar contexto: {e}")
+    
+    # ── FIM CONTEXT ISOLATION ─────────────────────────────────────────
 
     # --- MCP Tools Proxies ---
     
@@ -190,8 +254,17 @@ class BaseWorker:
             status_final = "failed"
         # -----------------------------
         
-        # Reporta resultado real
+         # Reporta resultado real
         self.report_result(exec_id, task_payload.get("step_id") or action, status_final, {"output": resultado_final})
+        
+        # ── CONTEXT ISOLATION: Reset após conclusão da task ──
+        # Ao terminar uma task (sucesso ou falha), limpa o contexto para a próxima.
+        # Isso impede que o histórico de uma task pollua o raciocínio da seguinte.
+        self._reset_context(
+            completed_action=action or "unknown",
+            summary=str(resultado_final)[:300] if resultado_final else ""
+        )
+        # ── FIM CONTEXT ISOLATION ──
 
     def report_result(self, execution_id: str, step_id: str, status: str, data: dict):
         """
