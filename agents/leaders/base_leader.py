@@ -1,6 +1,7 @@
 from typing import Dict, Any
 from agents.workers.base_worker import BaseWorker
 from core.mcp_server import mcp_server
+from core.protocols import validate_delegation, build_delegation
 
 class BaseLeader(BaseWorker):
     """
@@ -23,9 +24,27 @@ class BaseLeader(BaseWorker):
     def delegate_task(self, target_agent: str, action: str, params: Dict[str, Any], topic: str = None):
         """
         Envia uma tarefa técnica para o canal especificado ou do departamento.
+        
+        PROTOCOLO A2A: Valida o payload contra o schema de delegação
+        antes de publicar no EventBus.
         """
         # Se não for passado um tópico, usa o padrão do departamento
         final_topic = topic if topic else f"harness.{self.department}.worker"
+        
+        # ── A2A VALIDATION: Constrói e valida a delegação ──
+        delegation = build_delegation(
+            target_agent=target_agent,
+            action=action,
+            dept=self.department,
+            params=params,
+            topic=final_topic,
+        )
+        
+        is_valid, reason = validate_delegation(delegation)
+        if not is_valid:
+            print(f"[{self.agent_id}] ⛔ A2A REJEITADO (delegate_task): {reason}")
+            return {"status": "denied", "message": f"Protocolo A2A violado: {reason}"}
+        # ── FIM A2A VALIDATION ──
         
         print(f"[{self.agent_id}] DELEGANDO ({self.department}): {action} para {target_agent} no canal {final_topic}")
         

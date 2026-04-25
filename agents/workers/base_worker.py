@@ -13,6 +13,7 @@ from agno.models.openai import OpenAIChat
 from core.mcp_server import mcp_server
 from core.event_bus import EventBus
 from core.store import StateStore
+from core.protocols import validate_result, build_result
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -269,19 +270,31 @@ class BaseWorker:
     def report_result(self, execution_id: str, step_id: str, status: str, data: dict):
         """
         Envia o resultado para o tópico central de resultados e persiste no banco.
+        
+        PROTOCOLO A2A: Valida o payload contra o schema de resultado
+        antes de publicar no EventBus.
         """
-        payload = {
-            "execution_id": execution_id,
-            "step_id": step_id,
-            "agent_id": self.agent_id,
-            "status": status,
-            "data": data,
-            "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
-        }
+        payload = build_result(
+            agent_id=self.agent_id,
+            step_id=step_id,
+            status=status,
+            data=data,
+            execution_id=execution_id,
+        )
+        
+        # ── A2A VALIDATION: Garante que o resultado é válido antes de publicar ──
+        is_valid, reason = validate_result(payload)
+        if not is_valid:
+            print(f"[{self.agent_id}] ⛔ A2A REJEITADO (report_result): {reason}")
+            # Corrige para um status válido para não travar o fluxo
+            payload["status"] = "failed"
+            payload["data"] = {"error": f"Payload original inválido: {reason}"}
+        # ── FIM A2A VALIDATION ──
+        
         # CRÍTICO: Salva no DB ANTES de publicar no bus.
         # O callback do Superior dispara imediatamente no publish e o guardrail
         # consulta o DB — se salvarmos depois, ele lê o status antigo (OCUPADO).
-        status_msg = f"{status}: {str(data)[:50]}"
+        status_msg = f"{payload['status']}: {str(payload['data'])[:50]}"
         self.store.set_state(self.agent_id, execution_id or "global", "status", status_msg)
         
         self.bus.publish("harness.results", payload)

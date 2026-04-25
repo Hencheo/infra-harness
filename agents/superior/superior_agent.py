@@ -6,6 +6,7 @@ from agents.leaders.base_leader import BaseLeader
 from agno.agent import Agent
 from agno.models.openai import OpenAIChat
 from core.feature_tracker import feature_tracker
+from core.protocols import build_context_reset
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -107,12 +108,12 @@ class SuperiorAgent(BaseLeader):
             
             # ── CONTEXT ISOLATION: Sinaliza reset de contexto para a fase concluída ──
             # Agentes da fase completada devem limpar seu histórico para a próxima tarefa.
-            self.bus.publish("harness.context.reset", {
-                "completed_phase": current_phase["id"],
-                "completed_leader": current_phase.get("leader"),
-                "reason": f"Fase '{current_phase['name']}' concluída. Limpeza de contexto.",
-                "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-            })
+            reset_msg = build_context_reset(
+                completed_phase=current_phase["id"],
+                reason=f"Fase '{current_phase['name']}' concluída. Limpeza de contexto.",
+                completed_leader=current_phase.get("leader"),
+            )
+            self.bus.publish("harness.context.reset", reset_msg)
             print(f"[{self.agent_id}] 🔄 CONTEXT RESET broadcast para fase: {current_phase['id']}")
             # ── FIM CONTEXT ISOLATION ──
 
