@@ -1,0 +1,63 @@
+{
+  "project": "Harness Task Manager V1",
+  "spec_source": "specs/SUPREME_SPEC.md",
+  "created_at": "2026-04-25T00:35:00Z",
+  "phases": [
+    {
+      "id": "PHASE_1_INFRA",
+      "name": "Estrutura e Fundação",
+      "leader": "infra-leader",
+      "status": false,
+      "tasks": [
+        {"id": "infra_dirs", "description": "Criar diretórios do workspace (backend, frontend, config, database, docs, scripts, tests, src)", "status": false},
+        {"id": "infra_files", "description": "Criar arquivos base (.env, README.md, package.json)", "status": false}
+      ]
+    },
+    {
+      "id": "PHASE_2_DATA",
+      "name": "Modelagem de Dados",
+      "leader": "data-leader",
+      "status": false,
+      "tasks": [
+        {"id": "data_sqlite_setup", "description": "Configurar SQLite e criar arquivo tasks.db", "status": false},
+        {"id": "data_table_tasks", "description": "Criar tabela tasks (id, title, description, status, created_at)", "status": false}
+      ]
+    },
+    {
+      "id": "PHASE_3_BACKEND",
+      "name": "Desenvolvimento de API",
+      "leader": "backend-leader",
+      "status": false,
+      "tasks": [
+        {"id": "backend_get_tasks", "description": "Implementar GET /tasks (listar todas)", "status": false},
+        {"id": "backend_post_tasks", "description": "Implementar POST /tasks (criar tarefa)", "status": false},
+        {"id": "backend_put_tasks", "description": "Implementar PUT /tasks/<id> (alternar status)", "status": false},
+        {"id": "backend_delete_tasks", "description": "Implementar DELETE /tasks/<id> (remover)", "status": false},
+        {"id": "backend_server", "description": "Servidor rodando na porta 5000", "status": false}
+      ]
+    },
+    {
+      "id": "PHASE_4_FRONTEND",
+      "name": "Interface e UX",
+      "leader": "frontend-leader",
+      "status": false,
+      "tasks": [
+        {"id": "frontend_task_list", "description": "Lista de tarefas com cards elegantes", "status": false},
+        {"id": "frontend_add_form", "description": "Formulário para adicionar tarefas", "status": false},
+        {"id": "frontend_check_effect", "description": "Efeito visual de check ao completar", "status": false},
+        {"id": "frontend_dark_mode", "description": "Dark mode, tipografia Inter, bordas arredondadas", "status": false},
+        {"id": "frontend_api_integration", "description": "Integração com API backend", "status": false}
+      ]
+    },
+    {
+      "id": "PHASE_5_FINALIZATION",
+      "name": "Finalização e Dependências",
+      "leader": "infra-leader",
+      "status": false,
+      "tasks": [
+        {"id": "final_install_deps", "description": "Instalar pacotes físicos (pip, npm)", "status": false},
+        {"id": "final_validate_env", "description": "Validar ambiente rodando via dependency-worker", "status": false}
+      ]
+    }
+  ]
+}
