@@ -1,0 +1,89 @@
+================================================================================
+                    GUIA PRÁTICO DE IMPLEMENTAÇÃO - HARNESS
+                    Sincronizado com: ARQUITETURA_HARNESS.txt
+================================================================================
+
+Este documento traduz a macro-arquitetura do Harness em etapas de execução 
+diretas e sequenciais. Siga esta ordem rigorosamente para garantir estabilidade, 
+testando cada camada antes de avançar para a próxima.
+
+================================================================================
+              FASE 1: A FUNDAÇÃO (COMUNICAÇÃO E PERSISTÊNCIA)
+================================================================================
+Objetivo: Criar as rodovias de dados e a memória do sistema sem nenhum LLM atrelado.
+
+1. Event Bus (Mensageria Pub/Sub)
+   - Ação: Subir uma instância local de Redis via Docker (`docker run -d -p 6379:6379 redis:alpine`).
+   - Código: Criar `core/event_bus.py`. Implementar duas funções primárias: `publish(topic, payload)` e `subscribe(topic, callback)`.
+   - Teste: Executar um script rodando em loop infinito ouvindo o tópico "teste". Executar outro script de linha única que envia um "Olá". Se o primeiro printar "Olá", avance.
+
+2. State Store e Middleware (Memória e Hooks)
+   - Ação: Configurar banco local em `data/persist.db` via SQLite.
+   - Código: Criar `core/store.py` com script DDL para a tabela `agent_state`.
+   - Middleware (Sandwich): Criar `core/middleware.py`. Implementar o esqueleto para `pre_process()` (ex: linting de prompt, check de sanidade) e `post_process()` (ex: limpeza de saída markdown).
+
+================================================================================
+              FASE 2: O CÉREBRO (WORKFLOW ENGINE E ESTADOS)
+================================================================================
+Objetivo: Ensinar o sistema a orquestrar passos básicos, usando a Fundação.
+
+1. Parser de DAGs
+   - Ação: Criar a pasta `workflows/` e escrever `mock-workflow.yaml` (Passo A -> Passo B).
+   - Código: Módulo `core/engine.py` responsável por ler esse YAML, decodificar a ordem e colocar as requisições na fila do Redis.
+
+2. State Machine e Coordenador (com Ralph Loop)
+    - Lógica: O Core deve escutar os resultados do Event Bus e atualizar a State Machine interna (PENDING -> RUNNING -> COMPLETED).
+    - Ralph Loop Hook: Se o agente sinalizar finalização mas o objetivo do DAG não for atingido (verificação via policy), o Core limpa o contexto do worker no Redis e reinjeta a meta original para forçar a continuidade.
+    - Teste: Disparar um trigger simulado onde o agente "desiste". O Core deve postar automaticamente a reinjeção no Event Bus.
+
+================================================================================
+              FASE 3: O ESCUDO (TOOL REGISTRY E GUARDRAILS)
+================================================================================
+Objetivo: Fornecer interface às ferramentas do mundo real com interrupção de segurança, antes de injetar inteligência autônoma.
+
+1. Implementação Proxy Tool (Padrão MCP)
+   - Código: Em `core/mcp_server.py`, criar "Dummy Tools" como `read_log()` ou `ping()`. 
+   - Restrição: Nenhum script externo chamará a Tool diretamente; o disparo ocorrerá via injeção local.
+
+2. Policy Engine Básico
+   - Código: Em `core/policies/guardrails.py`.
+   - Lógica: Todo pedido que chegue ao Tool Registry precisa passar pela função avaliadora interna ("Pode deletar?" -> False).
+   - Teste: Escrever um teste unitário tentando apagar uma pasta via dummy tool. A Policy *precisa* barrar gerando log vermelho.
+
+================================================================================
+              FASE 4: OS TRABALHADORES (AGENTS E INTEGRAÇÃO LLM)
+================================================================================
+Objetivo: Plugar cérebros (LLMs) em posições predefinidas do tabuleiro.
+
+1. Dummy Workers Frios
+   - Código: Criar scripts assíncronos isolados em `agents/` (ex: `sre_worker.py`).
+   - Setup Inicial: O Worker SRE inicializa, conecta-se ao Redis e fica "ouvindo" um tópico específico. Ele não pensa, apenas ecoa que recebeu.
+
+2. Plugar LLMs e Camada de Sandwich
+    - Lógica: Interligar a API (Kimi K2.5) dentro da função `process()` do Worker. 
+    - Sandwich Hooks: Enclausurar a chamada do LLM entre `middleware.pre_process()` e `middleware.post_process()`.
+    - Context Management: Implementar `compaction_hook()` e Tool Offloading (Head/Tail para o modelo).
+    - Verification Protocol: Integrar scripts de validação (curl/lint) e suporte opcional ao **MCP TestSprite** (para testes autonômos de backend/frontend via tier gratuito).
+
+================================================================================
+              FASE 5: INTERFACE OP (HUMAN-IN-THE-LOOP NO HERMES)
+================================================================================
+Objetivo: Conectar o sistema abstrato robusto de volta à sua interface com o Telegram.
+
+1. Triggers Externos
+   - Código: Transformar o script do bot Telegram (atual Hermes) para atuar como Gatilho no `Event Bus`. Uma mensagem com a tag "Alarme" faz o Hermes iniciar o Workflow de crise no Redis.
+
+2. Approval Gate e Handoffs
+    - Lógica: Adicionar o status "WAITING_APPROVAL" no `core/engine.py`.
+    - Handoff Protocol: Implementar a passagem de "Minimal State Snapshots" entre agentes. O Worker recebe apenas o necessário do `AGENTS.md` e do `State Store`.
+    - Shared Ledger: Monitorar o arquivo `AGENTS.md` para "System Overrides" manuais.
+    - Acionamento: O clique "Aprovar" no Telegram posta a validação no Redis, e o Core destrava o DAG para finalização.
+
+================================================================================
+                                NOTA DE EXECUÇÃO
+================================================================================
+Regra de Ouro: Nunca escreva o código da Fase seguinte se as dependências 
+estruturais da Fase atual não estiverem retornando Zero Errors em seu mock local.
+
+Documento de Referência Histórica: ARQUITETURA_HARNESS.txt
+Status: Action Plan Ready.

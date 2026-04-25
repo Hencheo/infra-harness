@@ -1,0 +1,5 @@
+O "Primeiro Passo" Sugerido:
+Configuração do Ambiente: Criar o ambiente virtual (usando uv ou venv) e instalar as dependências base (agno, redis, fastapi).
+Event Bus (O Sistema Nervoso): Implementar o core/event_bus.py.
+Precisamos decidir se subimos um Redis via Docker (conforme o plano) ou se usamos uma solução de mensageria local em Python para o protótipo inicial.
+State Store (A Memória): Criar o core/store.py usando SQLite (ou o SqliteDb do Agno) para garantir que o estado dos agentes sobreviva a reinicializações.

@@ -1,0 +1,358 @@
+================================================================================
+                    HARNESS - SISTEMA DE ORQUESTRAÇÃO DE AGENTES
+                    Pasta de Testes: ~/.gemini/antigravity/scratch/harness
+================================================================================
+
+Data de Criação: 16/04/2026
+Autor: Rafael Hencheo + Hermes Agent
+Propósito: Arquitetura técnica completa para orquestração multi-agente
+Status de Revisão: Lapidado e Expandido com Padrões da Indústria (ETCSLV)
+
+================================================================================
+                              HISTÓRIA E CONTEXTO
+================================================================================
+
+O conceito de "Harness" (Arnês/Arreio) encontra suas raízes mais profundas na 
+engenharia de software tradicional não como um executor em si, mas como um ambiente 
+controlador. Na década de 1990, o engenheiro de software Kent Beck formalizou o 
+termo ao criar o SUnit (para Smalltalk), o progenitor de toda a família de 
+frameworks xUnit (incluindo o JUnit em parceria com Erich Gamma). O conceito 
+original de "Test Harness" nasceu como um ecossistema fechado que fornecia os stubs, 
+drivers, e dados de configuração necessários para que o código fosse executado em 
+condições isoladas e previsíveis.
+
+Nos anos de 2023 e 2024, com a eclosão de agentes autônomos impulsionados por 
+LLMs (como AutoGPT, BabyAGI, Paddock), a indústria debruçou-se sobre um gargalo severo: 
+Large Language Models são, por natureza, motores sem estado (stateless text-generation 
+engines). Sem uma "casca" que fornecesse memória e contenção, eles falhavam, 
+entravam em loops alucinatórios infinitos ou colidiam em conflitos destrutivos.
+
+A solução das principais big techs foi adaptar a filosofia do engenheiro. 
+Um Modern Agent Harness designa a infraestrutura de software abrangente que encapsula 
+um LLM e gerencia absolutamente tudo—exceto o núcleo de raciocínio interno do modelo. 
+Assim como um arnês provê contenção e vetor de direção a um cavalo de tração, 
+o Agent Harness atua como o alicerce material — entregando contornos de execução, 
+exposição regulada de ferramentas (tools), e penalidades sistêmicas para limites cruzados.
+
+Padrões Emergentes consolidados neste documento:
+- ETCSLV Model: Execution, Tools, Context, State, Lifecycle, Verification.
+- Padrões de Orquestração: Hierárquico, Concorrente, Roteado, e Peer-based.
+- Model Context Protocol (MCP, Anthropic 2024): O novo tecido conectivo do Harness.
+- Harness Engineering (LangChain 2024): Ralph Loops, Context Compaction e Skills Disclosure.
+
+================================================================================
+                          VISÃO GERAL DA ARQUITETURA
+================================================================================
+
+O Harness concebido para este sistema opera estritamente como um meta-sistema de 
+infraestrutura. Ele não substitui seu agente central, o Hermes. Ele fornece um 
+pano de fundo estrutural intransponível permitindo que o Hermes delegue pacotes
+de processamento sob estritas regras de controle.
+
+A arquitetura obedece a taxonomia ETCSLV da indústria, evitando recriação de roda:
+1. Execution (Execução): Modelos de execução em workflows formados em Grafos Acíclicos (DAG).
+2. Tools (Ferramentas): O MCP (Model Context Protocol) como middleware de binários.
+3. Context (Contexto): Memória de curto/longo prazo via injeção sintética RAG.
+4. State (Estado): Bancos persistentes com isolamento de metadados rigorosos.
+5. Lifecycle (Ciclo de Vida): Policy engine, Ralph Loops (continuidade), Guardrails.
+6. Verification (Verificação): Auditoria central e validação determinística (Real-world checks).
+7. Context Management: Compaction ativa e Tool Call Offloading.
+8. Sandwich Architecture: Middlewares determinísticos pré/pós chamadas de modelo.
+
+Diagrama Topológico do Sistema (Flow Híbrido Cérebro/Agentes):
+
+    ┌─────────────────────────────────────────────┐
+    │           HUMAN OPERATOR (Você)             │
+    │        Interface: Telegram/Zorin OS         │
+    └──────────────────┬──────────────────────────┘
+                       │ Event Trigger / Aprovação
+                       ▼
+    ┌─────────────────────────────────────────────┐
+    │            HERMES (Orquestrador)            │
+    │         Modelo: Kimi K2.5 Turbo             │
+    │         Função: Interface humana, decisão   │
+    │               estratégica, roteamento       │
+    └──────────────────┬──────────────────────────┘
+                       │ Protocolo: API / Event Bus
+                       ▼
+    ┌─────────────────────────────────────────────┐
+    │              HARNESS CORE (Lifecycle)       │
+    │  ┌─────────┐ ┌─────────┐ ┌─────────┐        │
+    │  │ Event   │ │ State   │ │ Policy  │        │
+    │  │ Bus     │ │ Store   │ │ Engine  │        │
+    │  └────┬────┘ └────┬────┘ └────┬────┘        │
+    └───────┼───────────┼───────────┼─────────────┘
+            │           │           │ Isolamento Físico e Namespace (cgroups)
+    ┌───────┴───────────┴───────────┴─────────────┐
+    │           AGENT POOL (Sandboxed Workers)    │
+    │  ┌─────┐ ┌─────┐ ┌─────┐ ┌─────┐            │
+    │  │ A1  │ │ A2  │ │ A3  │ │ A4  │            │
+    │  │Dev  │ │Debug│ │Ops  │ │Comm │            │
+    │  └─────┘ └─────┘ └─────┘ └─────┘            │
+    └─────────────────────────────────────────────┘
+            │           │           │ Limitações Contratuais de Escopo
+            ▼           ▼           ▼
+    ┌─────────────────────────────────────────────┐
+    │           TOOL REGISTRY (MCP Server)        │
+    │  ┌─────┐ ┌─────┐ ┌─────┐ ┌─────┐            │
+    │  │SSH  │ │n8n  │ │Git  │ │APIs │            │
+    │  └─────┘ └─────┘ └─────┘ └─────┘            │
+    └─────────────────────────────────────────────┘
+
+================================================================================
+                          COMPONENTES DETALHADOS
+================================================================================
+
+1. EVENT BUS (O Tecido Conjuntivo de Mensageria)
+--------------------------------------------------------------------------------
+Função: Gestão de pub/sub (Publication e Subscription) assíncrona. Ponto basal 
+para resolver o pattern "Fan-out/Fan-in", onde uma tarefa se divide em múltiplos 
+nós autônomos simultâneos e colapsa as respostas num nó validador central.
+
+Tecnologia: Redis Pub/Sub (preferencial por latência zero intra-cluster) ou Apache 
+Kafka se extrema resiliência e persistência offline for demandada no futuro.
+
+Estrutura Canônica de Payload Institucional:
+{
+    "id": "uuid-v4-unico",
+    "timestamp": "2026-04-16T15:30:00Z",
+    "topic": "incident.investigate",
+    "sender": "agent-sre-001",
+    "target": "agent-debugger-001",
+    "payload": {
+        "service": "apsparana.com.br",
+        "status": "down",
+        "priority": "critical"
+    },
+    "correlation_id": "tracelog-xyz-001"
+}
+
+Redes de Tópicos e ACL de Restrição:
+O Broker de eventos estritamente rejeita conexões de agentes tentando acessar namespaces 
+fora de seu clearance model.
+- Restritos a Leitura (Global): `harness.system.heartbeat`
+- Inacessíveis a Agentes Especializados: `harness.system.policy`, `harness.system.audit`
+
+2. STATE STORE (O Preenchedor de Statelessness)
+--------------------------------------------------------------------------------
+Função: O componente de Persistência e Continuidade. Como os modelos primários sofrem de
+amnésia por definição técnica, o State Store encapsula o fragmento "S" do padrão ETCSLV. 
+
+Tecnologia Escalonável: PostgreSQL. O uso obrigatório das diretrizes de segurança 
+"Row-Level Security" (RLS) mitiga vazamentos de janela de contexto. Adicionalmente,
+o sistema utiliza o padrão "Shared Ledger" via arquivo `AGENTS.md` no workspace
+para sincronização entre humanos e agentes.
+
+Engenharia de Tabela e RLS de Blindagem:
+CREATE TABLE agent_state (
+    id UUID PRIMARY KEY,
+    agent_id UUID NOT NULL,
+    session_id UUID NOT NULL,
+    key VARCHAR(255),
+    value JSONB,
+    created_at TIMESTAMP DEFAULT NOW()
+);
+
+-- Atrelando dados apenas às identidades que dispararem o set
+CREATE POLICY agent_isolation ON agent_state
+    USING (agent_id = current_setting('app.current_agent_id')::UUID);
+
+Um agente, em caso de brecha ou hallucination maliciosa gerando uma instrução 
+indevida massiva de "SELECT *", apenas visualizará as linhas atreladas ao seu 
+próprio container, impedindo bleeding point e quebra de sigilo da stack.
+
+3. POLICY ENGINE (O Motor de Governança Guardrail)
+--------------------------------------------------------------------------------
+Função: Opera como Gatekeeper (interceptador de fronteira). Age como o componente 
+"L" (Lifecycle/Guardrails) do ETCSLV. Impede decisões autônomas falhas de ferirem a 
+integridade do host do usuário.
+
+Tecnologia: Padrão emergente do projeto CNCF da LF, o Open Policy Agent (OPA).
+Linguagem avaliada de Regra Comercial (Rego).
+
+Exemplo Específico - Protocolar Acesso SSH vs Destruição:
+package harness.agent.permissions
+
+deny {
+    input.action.command == "rm"
+    input.action.args[_] == "-rf"
+}
+require_approval {
+    input.environment == "production"
+    input.action.impact == "service_restart"
+}
+
+Fluxo Atômico:
+- Toda "Intent" (intenção de ferramenta sugerida pelo modelo) antes de compilar com as 
+  APIs da nuvem, é verificada via proxy no array OPA. Decisões atômicas Allow/Deny.
+
+4. AGENT POOL (Contêineres e Execução Compartimentada)
+--------------------------------------------------------------------------------
+Função: Provê o ambiente onde os "Workers/Atuadores" desempenham a camada "Execution". 
+Implementa o padrão **"Sandwich Architecture"**: cada chamada de modelo é precedida por um `Pre-flight check` (ex: verificar existência de arquivos) e sucedida por um `Post-processing` (ex: auto-linting ou sanitização de saída), garantindo que o LLM interaja com dados limpos e gere saídas estruturadas.
+
+Tecnologia: Docker atrelado pesadamente as restrições nativas do Kernel (Linux cgroups).
+
+Cenário restritivo por Agent-Container:
+- Memory Boundaries: 512m hard limit (Kill signal inegociável).
+- Network Namespaces: Interface virtual independente sem rota default pra internet livre.
+- File System Mutilado: O Mount namespace restringe acesso apenas à `/workspace:rw`. 
+  Todo `/app`, `/etc`, `/usr` são read-only absolutos.
+
+5. TOOL REGISTRY (Model Context Protocol e Proxy Server)
+--------------------------------------------------------------------------------
+Função: A fronteira que concretiza a abstração universal de Ferramentas externas (Tools/"T").
+Ao invés do LLM Agent invocar um terminal raw Python "os.system()", ele interage contra um 
+servidor baseado no "Model Context Protocol". 
+
+Paradigmas MCP:
+O Tool registry valida as intenções e anexa as credenciais sensíveis via backend 
+protegido. Implementa **Handoff Protocols** rígidos: agentes recebem apenas o 
+"Minimal State Snapshot" necessário para a sub-task, reduzindo vazamento de contexto.
+
+6. HARNESS CORE (O Cérebro de Processamento em Grafo)
+--------------------------------------------------------------------------------
+Função: Workflow Engine centralizador de eventos. Gerencia os pipelines através de 
+processamentos DAG (Directed Acyclic Graphs). Implementa o padrão de continuidade 
+"Ralph Loops" para garantir que tarefas de longo horizonte não parem prematuramente.
+
+O status real das rotinas transita em uma State Machine determinística rígida:
+PENDING → DISPATCHED → RUNNING → WAITING_APPROVAL → COMPLETED/FAILED
+
+7. HARNESS ENGINEERING LAYER (Otimização de Performance e Contexto)
+--------------------------------------------------------------------------------
+Função: Camada de middleware que protege o modelo contra o "Context Rot" e maximiza 
+a eficiência de cada token processado.
+
+- Context Compaction: Ao atingir limites críticos de contexto, o Harness aciona um 
+  summarizer para colapsar o histórico passado, mantendo apenas a essência e o 
+  estado atual (State Store).
+- Tool Call Offloading: Saídas massivas de ferramentas (log dumps, CSVs) são 
+  automaticamente movidas para o State Store, injetando no modelo apenas um 
+  extrato (Head/Tail) e a referência de acesso.
+- Progressive Disclosure (Skills): O dicionário de ferramentas MCP é carregado 
+  sob demanda. O modelo recebe descrições leves (descritores de Skill) e solicita 
+  o payload completo apenas quando necessário.
+- Autonomous Verification (Integrável): Suporte via MCP a ferramentas como **TestSprite**, 
+  permitindo auditoria de código via agentes de teste externos (aproveitando o 
+  tier gratuito de 150 créditos).
+- Deterministic Validation (Layer V): O Harness não confia no relato do agente ("Eu fiz o deploy"). 
+  Ele executa scripts de validação (curl, tests, lint) para confirmar o sucesso da 
+  operação antes de marcar como COMPLETED.
+
+================================================================================
+                      MECANISMOS DE ISOLAMENTO E SEGURANÇA
+================================================================================
+
+O Harness divide sua filosofia de Defesa em duas esferas dogmáticas:
+
+ISOLAMENTO HORIZONTAL (Proteção Agente contra Agente):
+1. Sandboxing P2P: O emprego rigoroso do PID e Network Namespaces, combinados. 
+   O IP 10.0.1.2 do Agente A não pode rotear nem fazer sweep de interface do roteador 
+   de rede no Agente B em 10.0.1.3 porque não habitam as regras conjuntas do Iptables host.
+2. Arquitetura OverlayFS: Camadas puras nos contêineres garantem que um ator local 
+   nunca poderá sequer enxergar as subáreas do outro nó.
+
+ISOLAMENTO VERTICAL (Proteção Sistema x Componente Operador):
+1. Capability Dropping: Queda absoluta das diretivas de Kernel level. Um pacote Python 
+   executando em um contêiner sob o harness não tem CAP_SYS_ADMIN. Modificações Kernel 
+   ou interceptações PTRACE entre processos filhos esbarram em erro "Not Permitted".
+2. Gestão Assíncrona Secret Vault: Chaves da API do Telegram (Hermes), Fireworks, Git e 
+   SSH sobrevivem apenas na camada superior do Harness Core. Um proxy sidecar injeta 
+   credenciais efêmeras em tempo de tool-call.
+3. Mutual Auth mTLS: Todas as camadas em conversação assinam datagramas usando certificados 
+   X.509 de curta duração.
+
+================================================================================
+                          FLUXO DE EXECUÇÃO REPORTADO
+================================================================================
+
+Exemplo Prático Detalhado (Resolução de Incidente - Topologia Híbrida Fan-out):
+
+[GATILHO] Um alarme via Webhook da porta log 500 do Hostinger é capturado via endpoint publico.
+[ROTEAMENTO 01] Harness Core empacota o evento HTTP bruto e registra a anomalia (Auditing). 
+                  Dispara o evento Message Queue em payload "harness.incidents.new".
+[DELEGAÇÃO 02] O agente orquestrador superior (Hermes / SRE-Agent) detecta a gravidade, e abre 
+                  DAG Flow para mitigar a crise. Ele gera duas forks simultâneas (Fan-out pattern).
+[TRABALHO PARALEL0]
+      > Fork 1 (Debugger-Agent): Recebe a ordem, conecta-se no Tool MCP de logs, extrai o log de PHP da Hostinger.
+      > Fork 2 (DevOps-Agent): Conectado remotamente, extrai da stack a condição de hardware do nó virtual.
+[COLAPSO/REUNIÃO] O Orquestrador SRE-Agent junta os metadados simultâneos. Descarta teorias erradas (Fan-in)
+                  e formula uma decisão técnica precisa: "Database sobrecarregado travou porta, necessário restart".
+[GOVERNANÇA 05] A tentativa de emitir `systemctl restart mysqld` pela Tool Registry empesta na Policy OPA. 
+                  A Regra "require_approval" congela o contêiner do Dev-Ops e escala para a interface.
+[HUMAN-IN-THE-LOOP] Via Telegram-bot Tool do Hermes, o agente interage com o Operador Rafael perguntando 
+                  sobre o ok permissivo para o restart. 
+[RESOLUÇÃO] Positivo recebido. A task é descongelada. O daemon avança o estado da máquina para Executar e atesta 
+                  o final do incidente e seu subsequente update noc Notion Knowledge Base centralizado.
+
+================================================================================
+                   PROJEÇÃO DE ESQUELETO NO AMBIENTE HERMES
+================================================================================
+
+O design reportado orienta para uma refatoração em árvore bem definida. 
+
+/home/hencheo/.gemini/antigravity/scratch/HARNESS-INFRA/
+├── core/                       # Core Motor ETCSLV Completo
+│   ├── engine.py               # Processador DAG e Gestor de State Machine
+│   ├── event_bus.py            # Adaptador de fila Pub/Sub assíncrona local
+│   ├── store.py                # Wrapper unificado RLS SQL
+│   ├── verifier.py             # Verificação Determinística (Layer V)
+│   ├── policies/               # Diretório de Guardrails e Políticas
+│   │   └── guardrails.py       # Lógica de Interceptação de Segurança
+│   └── mcp_server.py           # Registro Central de Ferramentas (Proxy)
+├── agents/                     # O Workspace com os Agentes Ativos
+│   ├── superior/               # Tier 1: Auditoria e Spec Suprema
+│   │   └── superior_agent.py
+│   ├── leaders/                # Tier 2: Estratégia e Delegação
+│   │   ├── base_leader.py      # Classe base para os Gerentes
+│   │   ├── backend_leader.py
+│   │   ├── frontend_leader.py
+│   │   └── data_leader.py      # Arquiteto de Dados
+│   ├── workers/                # Tier 3: Execução Técnica
+│   │   ├── base_worker.py
+│   │   ├── react_worker.py
+│   │   └── sqlite_worker.py    # Especialista em SQLite
+│   └── dependences/            # Especialistas em Infraestrutura
+│       └── dependency_worker.py
+├── specs/                      # Fonte da Verdade do Projeto
+│   └── SUPREME_SPEC.md         # Documento mestre de especificações
+├── tools/                      # Ferramentas auxiliares do sistema
+│   └── system_commands.py      # Comandos determinísticos de sistema
+├── workflows/                  # Receituários de automação (YAML/JSON)
+├── data/                       # Área de persistência blindada
+│   └── harness_state.db        # Banco de dados SQLite de estado
+└── main.py                     # Ponto de entrada (opcional)
+
+================================================================================
+                               GLOSSÁRIO TÉCNICO
+================================================================================
+
+- DAG: Grafo Acíclico Direcionado (Directed Acyclic Graph), padrão matemático para definir 
+  hierarquia clara e passos imutavelmente ordenados que não caem em laços viciosos.
+- ETCSLV: Arquitetura fundamental moderna englobando Execution, Tools, Context, State, Lifecycle, 
+  Verification de modelos fundacionais na engenharia robusta de LLMs.
+- Extrusão P2P (Bleeding Point): Uma vazão perigosa de dados ou contexto de ambiente fechado em contêineres P2P.
+- Fan-out / Fan-in: Processamento matemático paralelo onde uma semente (query/problema) origina múltiplos
+  processamentos assíncronos que executam sem se comunicarem, até suas propostas serem juntadas por um nó receptor unificado.
+- MCP (Model Context Protocol): O protocolo universal Anthropic pra padronizar ligações cliente-API-sistema,
+  diminuindo necessidade de código macarrônico customizado nos agents.
+- OPA (Open Policy Agent): CNCF Open Source atuando em alta velocidade como Juiz que dita quem pode fazer o quê.
+
+================================================================================
+                                NOTAS FINAIS
+================================================================================
+
+Este documento é Canônico.
+
+Foi concebido analisando as nuances e fracassos de arquiteturas triviais legadas de 2023 em favor das
+implementações definitivas "Enterprise-Ready" adotadas globalmente desde os protótipos avançados de 2024 pra frente.
+
+Recomenda-se manter na pasta: ~/.gemini/antigravity/scratch/harness/ARQUITETURA_HARNESS.txt
+
+Versão da Documentação: 2.0 (Edição de Peso Arquitetural)
+Data: 16/04/2026
+Assinado: Hermes Agent sob arquiteturas Kimi, assistido via refinamento jornalístico solicitado por Rafael Hencheo.
+================================================================================
+                                    FIM
+================================================================================

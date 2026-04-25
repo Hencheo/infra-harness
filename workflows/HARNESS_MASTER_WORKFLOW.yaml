@@ -1,0 +1,40 @@
+name: "Harness Master SDD Workflow"
+description: "Fluxo sequencial estrito para o desenvolvimento do Task Manager V1"
+version: "2.0"
+
+# Este arquivo é a bússola do Auditor Superior.
+# As fases devem ser seguidas em ordem cronológica e física.
+
+phases:
+  - id: "PHASE_1_INFRA"
+    name: "Estrutura e Fundação"
+    leader: "infra-leader"
+    objective: "Criar diretórios, arquivos base (.env, README) e boilerplate inicial via system-worker."
+    next: "PHASE_2_DATA"
+
+  - id: "PHASE_2_DATA"
+    name: "Modelagem de Dados"
+    leader: "data-leader"
+    objective: "Configurar SQLite e tabelas conforme a SUPREME_SPEC."
+    depends_on: "PHASE_1_INFRA"
+    next: "PHASE_3_BACKEND"
+
+  - id: "PHASE_3_BACKEND"
+    name: "Desenvolvimento de API"
+    leader: "backend-leader"
+    objective: "Implementar rotas, lógica de negócio e integração com banco."
+    depends_on: "PHASE_2_DATA"
+    next: "PHASE_4_FRONTEND"
+
+  - id: "PHASE_4_FRONTEND"
+    name: "Interface e UX"
+    leader: "frontend-leader"
+    objective: "Desenvolver componentes React e integração com API."
+    depends_on: "PHASE_3_BACKEND"
+    next: "PHASE_5_FINALIZATION"
+
+  - id: "PHASE_5_FINALIZATION"
+    name: "Finalização e Dependências"
+    leader: "infra-leader"
+    objective: "Instalar pacotes físicos e validar o ambiente rodando via dependency-worker."
+    depends_on: "PHASE_4_FRONTEND"
